@@ -1,8 +1,0 @@
-#!/bin/bash
-autoheader
-libtoolize
-aclocal
-automake
-autoconf
-./configure --prefix=/usr
-make

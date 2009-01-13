@@ -34,7 +34,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <ctype.h>
-#include "openr2/r2ioabs.h"
+#include <sys/ioctl.h>
+#include "openr2/r2hwcompat.h"
 #include "openr2/r2log-pvt.h"
 #include "openr2/r2utils-pvt.h"
 #include "openr2/r2proto-pvt.h"
@@ -276,7 +277,7 @@ static void turn_off_mf_engine(openr2_chan_t *r2chan)
 static int set_cas_signal(openr2_chan_t *r2chan, openr2_cas_signal_t signal)
 {
 	OR2_CHAN_STACK;
-	int res, cas;
+	int res, cas, myerrno;
 	if (signal == OR2_CAS_INVALID) {
 		openr2_log(r2chan, OR2_LOG_ERROR, "Cannot set INVALID signal\n");
 		return -1;
@@ -287,9 +288,11 @@ static int set_cas_signal(openr2_chan_t *r2chan, openr2_cas_signal_t signal)
 	r2chan->cas_tx_signal = signal;
 	/* set the NON R2 bits to 1 */
 	cas |= r2chan->r2context->cas_nonr2_bits; 
-	res = openr2_io_set_cas(r2chan, cas);
+	res = ioctl(r2chan->fd, OR2_HW_OP_SET_TX_BITS, &cas);
 	if (res) {
-		openr2_log(r2chan, OR2_LOG_ERROR, "CAS I/O failure.\n");
+		myerrno = errno;
+		EMI(r2chan)->on_os_error(r2chan, myerrno);
+		openr2_log(r2chan, OR2_LOG_ERROR, "Setting CAS bits failed: %s\n", strerror(myerrno));
 		return -1;
 	} 
 	openr2_log(r2chan, OR2_LOG_CAS_TRACE, "CAS Raw Tx >> 0x%02X\n", cas);
@@ -789,11 +792,15 @@ static void mf_fwd_safety_timeout_expired(openr2_chan_t *r2chan, void *data)
 static void prepare_mf_tone(openr2_chan_t *r2chan, int tone)
 {
 	OR2_CHAN_STACK;
-	int ret;
+	int flush_write = OR2_HW_FLUSH_WRITE, ret;
+	int myerrno = 0;
 	/* put silence only if we have a write tone */
 	if (!tone && r2chan->mf_write_tone) {
 		openr2_log(r2chan, OR2_LOG_MF_TRACE, "MF Tx >> %c [OFF]\n", r2chan->mf_write_tone);
-		if (openr2_io_flush_write_buffers(r2chan)) {
+		if (ioctl(r2chan->fd, OR2_HW_OP_FLUSH, &flush_write)) {
+			myerrno = errno;
+			EMI(r2chan)->on_os_error(r2chan, myerrno);
+			openr2_log(r2chan, OR2_LOG_ERROR, "Flush write buffer failed: %s\n", strerror(myerrno));
 			return;
 		}
 	} 
@@ -895,9 +902,11 @@ static void persistence_check_expired(openr2_chan_t *r2chan, void *data)
 	int cas, res, myerrno;
 	int rawcas;
 	r2chan->timer_ids.cas_persistence_check = 0;
-	res = openr2_io_get_cas(r2chan, &rawcas);
+	res = ioctl(r2chan->fd, OR2_HW_OP_GET_RX_BITS, &rawcas);
 	if (res) {
-		openr2_log(r2chan, OR2_LOG_ERROR, "Getting CAS bits from I/O device for persistence check failed: %s\n", strerror(myerrno));
+		myerrno = errno;
+		EMI(r2chan)->on_os_error(r2chan, myerrno);
+		openr2_log(r2chan, OR2_LOG_ERROR, "Getting CAS bits for persistence check failed: %s\n", strerror(myerrno));
 		return;
 	}
 	/* pick up only the R2 bits */
@@ -928,7 +937,7 @@ static void persistence_check_expired(openr2_chan_t *r2chan, void *data)
 int openr2_proto_handle_cas(openr2_chan_t *r2chan)
 {
 	OR2_CHAN_STACK;
-	int cas, res;
+	int cas, res, myerrno;
 	openr2_cas_state_t out_r2_state = OR2_INVALID_STATE;
 	openr2_call_disconnect_cause_t out_disconnect_cause = OR2_CAUSE_NORMAL_CLEARING;
 
@@ -941,9 +950,11 @@ int openr2_proto_handle_cas(openr2_chan_t *r2chan)
 		goto handlecas;
 	} 
 
-	res = openr2_io_get_cas(r2chan, &cas);
+	res = ioctl(r2chan->fd, OR2_HW_OP_GET_RX_BITS, &cas);
 	if (res) {
-		openr2_log(r2chan, OR2_LOG_ERROR, "Getting CAS from I/O device failed\n");
+		myerrno = errno;
+		EMI(r2chan)->on_os_error(r2chan, myerrno);
+		openr2_log(r2chan, OR2_LOG_ERROR, "Getting CAS bits failed: %s\n", strerror(myerrno));
 		return -1;
 	}
 	if (r2chan->cas_persistence_check_signal != -1) {
