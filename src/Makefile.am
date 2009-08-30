@@ -14,10 +14,9 @@ nobase_include_HEADERS = openr2/r2chan.h \
 		         openr2/r2context.h \
 		         openr2/r2proto.h \
 		         openr2/r2utils.h \
-		         openr2/r2log.h \
-		         openr2/r2exports.h 
+		         openr2/r2log.h 
 
-libopenr2_la_SOURCES = r2chan.c r2context.c r2log.c r2proto.c r2utils.c r2engine.c r2ioabs.c queue.c
+libopenr2_la_SOURCES = r2chan.c r2context.c r2log.c r2proto.c r2utils.c r2engine.c queue.c
 libopenr2_la_CFLAGS = $(AM_CFLAGS) -D__OR2_COMPILING_LIBRARY__
 if HAVE_ATTR_VISIBILITY_HIDDEN
 libopenr2_la_CFLAGS += -fvisibility=hidden

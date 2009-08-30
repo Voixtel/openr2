@@ -82,13 +82,6 @@ typedef struct openr2_context_s {
 	   functions to the R2 channels */
 	openr2_transcoder_interface_t *transcoder;
 
-	/* this interface provide I/O
-	   functions to the R2 channels */
-	openr2_io_interface_t *io;
-
-	/* Type of I/O interface */
-	openr2_io_type_t io_type;
-
 	/* this interface provides DTMF functions
 	   to the R2 channels */
 	openr2_dtmf_interface_t *dtmfeng;
