@@ -126,7 +126,7 @@ static void *dahdi_mf_tx_init(dahdi_mf_tx_state_t *handle, int forward_signals)
 	int res;
 	/* choose either forward or backward signals */
 	strcpy(dahdi_operation.dialstr, forward_signals ? "O" : "R");
-	res = ioctl((int)(long)openr2_chan_get_fd(handle->r2chan), DAHDI_DIAL, &dahdi_operation);
+	res = ioctl(openr2_chan_get_fd(handle->r2chan), DAHDI_DIAL, &dahdi_operation);
 	if (-1 == res) {
 		perror("init failed");
 		return NULL;
@@ -158,7 +158,7 @@ static int dahdi_mf_tx_put(dahdi_mf_tx_state_t *handle, char signal)
 static int dahdi_mf_tx(dahdi_mf_tx_state_t *handle, int16_t buffer[], int samples)
 {
 	int res;
-	res = ioctl((int)(long)openr2_chan_get_fd(handle->r2chan), DAHDI_SENDTONE, &handle->signal);
+	res = ioctl(openr2_chan_get_fd(handle->r2chan), DAHDI_SENDTONE, &handle->signal);
 	if (-1 == res) {
 		perror("failed to set signal\n");
 		return -1;
@@ -667,11 +667,11 @@ void *wait_call(void *data)
 	fd_set chanread, chanexcept;
 	openr2_variant_t variant;
 	channo = openr2_chan_get_number(r2chan);
-	chanfd = (int)(long)openr2_chan_get_fd(r2chan);
+	chanfd = openr2_chan_get_fd(r2chan);
 	variant = openr2_context_get_variant(confdata->context);
 	printf("channel %d, variant = %s\n", channo, openr2_proto_get_variant_string(variant));
 	openr2_chan_set_idle(r2chan);
-	openr2_chan_process_cas_signaling(r2chan);
+	openr2_chan_handle_cas(r2chan);
 	while (1) {
 		FD_ZERO(&chanread);
 		FD_ZERO(&chanexcept);
@@ -707,7 +707,7 @@ void *wait_call(void *data)
 			break;
 		}
 		if (FD_ISSET(chanfd, &chanread) || FD_ISSET(chanfd, &chanexcept)) {
-			openr2_chan_process_signaling(r2chan);
+			openr2_chan_process_event(r2chan);
 		}
 	}
 	return (void *)0;
@@ -721,10 +721,10 @@ void *make_call(void *data)
 	fd_set chanread, chanexcept;
 	openr2_chan_t *r2chan = data;
 	struct timeval timeout, *timeout_ptr;
-	chanfd = (int)(long)openr2_chan_get_fd(r2chan);
+	chanfd = openr2_chan_get_fd(r2chan);
 	/* handle current state of ABCD bits, either blocked or idle */
 	openr2_chan_set_idle(r2chan);
-	openr2_chan_process_cas_signaling(r2chan);
+	openr2_chan_handle_cas(r2chan);
 	while (1) {
 		FD_ZERO(&chanread);
 		FD_ZERO(&chanexcept);
@@ -744,7 +744,7 @@ void *make_call(void *data)
 			break;
 		}
 		if (FD_ISSET(chanfd, &chanread) || FD_ISSET(chanfd, &chanexcept)) {
-			openr2_chan_process_signaling(r2chan);
+			openr2_chan_process_event(r2chan);
 		}
 	}
 	return (void *)0;
@@ -823,9 +823,8 @@ int main(int argc, char *argv[])
 			mf_iface = &g_mf_dahdi_iface;
 		}
 #endif
-		g_confdata[c].context = openr2_context_new(g_confdata[c].variant, &g_event_iface, 
-							   g_confdata[c].max_ani, g_confdata[c].max_dnis);
-		openr2_context_set_mflib_interface(g_confdata[c].context, mf_iface);
+		g_confdata[c].context = openr2_context_new(mf_iface, &g_event_iface, 
+				NULL, g_confdata[c].variant, g_confdata[c].max_ani, g_confdata[c].max_dnis);
 		if (!g_confdata[c].context) {
 			fprintf(stderr, "failed to create R2 context when c = %d\n", c);
 			break;
@@ -862,8 +861,7 @@ int main(int argc, char *argv[])
 				tx_mf_state = &g_confdata[c].channels[cnt].dahdi_tx_state;
 			}
 #endif
-			g_confdata[c].channels[cnt].chan = openr2_chan_new(g_confdata[c].context, i);
-			openr2_chan_set_mflib_handles(g_confdata[c].channels[cnt].chan, tx_mf_state, NULL);
+			g_confdata[c].channels[cnt].chan = openr2_chan_new(g_confdata[c].context, i, tx_mf_state, NULL);
 			if (!g_confdata[c].channels[cnt].chan) {
 				fprintf(stderr, "failed to create R2 channel %d: %s\n", i,
 						openr2_context_error_string(openr2_context_get_last_error(g_confdata[c].context)));

@@ -35,7 +35,6 @@
 #include "openr2/r2utils-pvt.h"
 #include "openr2/r2chan-pvt.h"
 #include "openr2/r2context-pvt.h"
-#include "openr2/r2ioabs.h"
 
 static void on_call_init_default(openr2_chan_t *r2chan)
 {
@@ -187,8 +186,11 @@ static openr2_dtmf_interface_t default_dtmf_engine = {
 };
 
 OR2_EXPORT_SYMBOL
-openr2_context_t *openr2_context_new(openr2_variant_t variant, openr2_event_interface_t *evmanager, int max_ani, int max_dnis)
+openr2_context_t *openr2_context_new(openr2_mflib_interface_t *mflib, openr2_event_interface_t *evmanager, 
+		              openr2_transcoder_interface_t *transcoder, openr2_variant_t variant, int max_ani, int max_dnis)
 {
+	/* TODO: set some error value when returning NULL */
+
 	if (!evmanager) {
 		evmanager = &default_evmanager;
 	} else {
@@ -244,14 +246,50 @@ openr2_context_t *openr2_context_new(openr2_variant_t variant, openr2_event_inte
 	}
 	openr2_context_t *r2context = calloc(1, sizeof(*r2context));
 	if (!r2context) {
-		r2context->last_error = OR2_LIBERR_OUT_OF_MEMORY;
 		return NULL;
 	}
 
-	r2context->mflib = &default_mf_interface;
-	r2context->transcoder = &default_transcoder;
-	r2context->variant = variant;
+	/* fix the MF iface */
+	if (!mflib) {
+		mflib = &default_mf_interface;
+	} else {
+		if (!mflib->mf_read_init) {
+			mflib->mf_read_init = mf_read_init_default;
+		}
+		if (!mflib->mf_write_init) {
+			mflib->mf_write_init = mf_write_init_default;
+		}
+		if (!mflib->mf_detect_tone) {
+			mflib->mf_detect_tone = mf_detect_tone_default;
+		}
+		if (!mflib->mf_generate_tone) {
+			mflib->mf_generate_tone = mf_generate_tone_default;
+		}
+		if (!mflib->mf_select_tone) {
+			mflib->mf_select_tone = mf_select_tone_default;
+		}
+		if (!mflib->mf_want_generate) {
+			mflib->mf_want_generate = mf_want_generate_default;
+		}
+		/* dispose routines are allowed to be NULL */
+	}
+
+	/* fix the transcoder interface */
+	if (!transcoder) {
+		transcoder = &default_transcoder;
+	} else {
+		if (!transcoder->alaw_to_linear) {
+			transcoder->alaw_to_linear = alaw_to_linear_default;
+		} 
+		if (!transcoder->linear_to_alaw) {
+			transcoder->linear_to_alaw = linear_to_alaw_default;
+		}
+	}
+
+	r2context->mflib = mflib;
 	r2context->evmanager = evmanager;
+	r2context->transcoder = transcoder;
+	r2context->variant = variant;
 	r2context->dtmfeng = &default_dtmf_engine;
 	r2context->loglevel = OR2_LOG_ERROR | OR2_LOG_WARNING | OR2_LOG_NOTICE;
 	pthread_mutex_init(&r2context->timers_lock, NULL);
@@ -259,65 +297,7 @@ openr2_context_t *openr2_context_new(openr2_variant_t variant, openr2_event_inte
 		free(r2context);
 		return NULL;
 	}
-	openr2_context_set_io_type(r2context, OR2_IO_DEFAULT, NULL);
 	return r2context;
-}
-
-OR2_EXPORT_SYMBOL
-int openr2_context_set_mflib_interface(openr2_context_t *r2context, openr2_mflib_interface_t *mflib)
-{
-	/* fix the MF iface */
-	if (!mflib) {
-		mflib = &default_mf_interface;
-		return 0;
-	} 
-	if (!mflib->mf_read_init) {
-		r2context->last_error = OR2_LIBERR_INVALID_INTERFACE;
-		return -1;
-	}
-	if (!mflib->mf_write_init) {
-		r2context->last_error = OR2_LIBERR_INVALID_INTERFACE;
-		return -1;
-	}
-	if (!mflib->mf_detect_tone) {
-		r2context->last_error = OR2_LIBERR_INVALID_INTERFACE;
-		return -1;
-	}
-	if (!mflib->mf_generate_tone) {
-		r2context->last_error = OR2_LIBERR_INVALID_INTERFACE;
-		return -1;
-	}
-	if (!mflib->mf_select_tone) {
-		r2context->last_error = OR2_LIBERR_INVALID_INTERFACE;
-		return -1;
-	}
-	if (!mflib->mf_want_generate) {
-		r2context->last_error = OR2_LIBERR_INVALID_INTERFACE;
-		return -1;
-	}
-	/* dispose routines are allowed to be NULL */
-	r2context->mflib = mflib;
-	return 0;
-}
-
-OR2_EXPORT_SYMBOL
-int openr2_context_set_transcoder_interface(openr2_context_t *r2context, openr2_transcoder_interface_t *transcoder)
-{
-	/* fix the transcoder interface */
-	if (!transcoder) {
-		transcoder = &default_transcoder;
-		return 0;
-	} 
-	if (!transcoder->alaw_to_linear) {
-		r2context->last_error = OR2_LIBERR_INVALID_INTERFACE;
-		return -1;
-	} 
-	if (!transcoder->linear_to_alaw) {
-		r2context->last_error = OR2_LIBERR_INVALID_INTERFACE;
-		return -1;
-	}
-	r2context->transcoder = transcoder;
-	return 0;
 }
 
 OR2_EXPORT_SYMBOL
@@ -460,10 +440,6 @@ const char *openr2_context_error_string(openr2_liberr_t error)
 	case OR2_LIBERR_SYSCALL_FAILED: return "System call failed";
 	case OR2_LIBERR_INVALID_CHAN_SIGNALING: return "Invalid channel signaling";
 	case OR2_LIBERR_CANNOT_SET_IDLE: return "Failed to set IDLE state on channel";
-	case OR2_LIBERR_NO_IO_IFACE_AVAILABLE: return "No I/O interface available for channel";
-	case OR2_LIBERR_INVALID_CHAN_NUMBER: return "Invalid channel number";
-	case OR2_LIBERR_OUT_OF_MEMORY: return "Out of memory";
-	case OR2_LIBERR_INVALID_INTERFACE: return "Invalid interface";
 	default: return "*Unknown*";
 	}
 }
@@ -691,92 +667,6 @@ int openr2_context_get_double_answer(openr2_context_t *r2context)
 {
 	OR2_CONTEXT_STACK;
 	return r2context->double_answer ? 1 : 0;
-}
-
-OR2_EXPORT_SYMBOL
-int openr2_context_set_io_type(openr2_context_t *r2context, openr2_io_type_t io_type, openr2_io_interface_t *io_interface)
-{
-	OR2_CONTEXT_STACK;
-	openr2_io_interface_t *internal_io_interface = NULL;
-	switch (io_type) {
-	case OR2_IO_CUSTOM:
-		/* sanity check for all members */
-		if (!io_interface) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "I/O interface cannot be null!\n");
-			return -1;
-		}
-		if (!io_interface->open) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unspecified I/O interface method: open\n");
-			return -1;
-		}
-		if (!io_interface->close) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unspecified I/O interface method: close\n");
-			return -1;
-		}
-		if (!io_interface->set_cas) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unspecified I/O interface method: set_cas\n");
-			return -1;
-		}
-		if (!io_interface->get_cas) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unspecified I/O interface method: get_cas\n");
-			return -1;
-		}
-		if (!io_interface->flush_write_buffers) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unspecified I/O interface method: flush_write_buffers\n");
-			return -1;
-		}
-		if (!io_interface->write) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unspecified I/O interface method: write\n");
-			return -1;
-		}
-		if (!io_interface->read) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unspecified I/O interface method: read\n");
-			return -1;
-		}
-		if (!io_interface->setup) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unspecified I/O interface method: setup\n");
-			return -1;
-		}
-		if (!io_interface->wait) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unspecified I/O interface method: wait\n");
-			return -1;
-		}
-		if (!io_interface->get_oob_event) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unspecified I/O interface method: get_oob_event\n");
-			return -1;
-		}
-		r2context->io = io_interface;
-		r2context->io_type = io_type;
-		return 0;
-	case OR2_IO_ZT:
-		/* check that zaptel interface is available */
-		internal_io_interface = openr2_io_get_zt_interface();
-		if (!internal_io_interface) {
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unavailable Zaptel or DAHDI I/O interface.\n");
-			return -1;
-		}
-		r2context->io_type = io_type;
-		r2context->io = internal_io_interface;
-		return 0;
-	case OR2_IO_DEFAULT:
-		/* check first if zaptel interface is available */
-		internal_io_interface = openr2_io_get_zt_interface();
-		if (!internal_io_interface) {
-			/* if not available, bail out with error since we don't have any other built-in interface yet,
-			   but we should check for openr2_io_get_oz_interface to get openzap interface or openr2_io_get_wp_interface
-			   for wanpipe interface */
-			openr2_log2(r2context, OR2_LOG_ERROR, "Unavailable default I/O interface.\n");
-			return -1;
-		}
-		r2context->io_type = io_type;
-		r2context->io = internal_io_interface;
-		return 0;
-		return 0;
-	default:
-		break;
-	}
-	openr2_log2(r2context, OR2_LOG_ERROR, "Invalid I/O type %d\n", io_type);
-	return -1;
 }
 
 #define LOADTONE(mytone) \

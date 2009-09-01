@@ -32,7 +32,18 @@
 extern "C" {
 #endif
 
-#include "r2exports.h"
+#ifdef __OR2_COMPILING_LIBRARY__
+struct openr2_chan_s;
+#define openr2_chan_t struct openr2_chan_s
+struct openr2_context_s;
+#define openr2_context_t struct openr2_context_s
+#else
+#ifndef OR2_CHAN_AND_CONTEXT_DEFINED
+#define OR2_CHAN_AND_CONTEXT_DEFINED
+typedef void* openr2_chan_t;
+typedef void* openr2_context_t;
+#endif
+#endif
 
 #define OR2_MAX_PATH 255
 
@@ -138,49 +149,6 @@ typedef struct {
 	openr2_handle_billing_pulse_received_func on_billing_pulse_received;
 } openr2_event_interface_t;
 
-#define OR2_IO_READ      (1 << 0)
-#define OR2_IO_WRITE     (1 << 1)
-#define OR2_IO_OOB_EVENT (1 << 2)
-
-/* Out of Band events */
-typedef enum {
-	OR2_OOB_EVENT_NONE,
-	OR2_OOB_EVENT_CAS_CHANGE,
-	OR2_OOB_EVENT_ALARM_ON,
-	OR2_OOB_EVENT_ALARM_OFF
-} openr2_oob_event_t;
-
-typedef openr2_io_fd_t (*openr2_io_open_func)(openr2_context_t* r2context, int channo);
-typedef int (*openr2_io_close_func)(openr2_chan_t *r2chan);
-typedef int (*openr2_io_set_cas_func)(openr2_chan_t *r2chan, int cas);
-typedef int (*openr2_io_get_cas_func)(openr2_chan_t *r2chan, int *cas);
-typedef int (*openr2_io_flush_write_buffers_func)(openr2_chan_t *r2chan);
-typedef int (*openr2_io_write_func)(openr2_chan_t *r2chan, const void *buf, int size);
-typedef int (*openr2_io_read_func)(openr2_chan_t *r2chan, const void *buf, int size);
-typedef int (*openr2_io_setup_func)(openr2_chan_t *r2chan);
-typedef int (*openr2_io_wait_func)(openr2_chan_t *r2chan, int *flags, int block);
-typedef int (*openr2_io_get_oob_event_func)(openr2_chan_t *r2chan, openr2_oob_event_t *event);
-typedef struct {
-	openr2_io_open_func open;
-	openr2_io_close_func close;
-	openr2_io_set_cas_func set_cas;
-	openr2_io_get_cas_func get_cas;
-	openr2_io_flush_write_buffers_func flush_write_buffers;
-	openr2_io_write_func write;
-	openr2_io_read_func read;
-	openr2_io_setup_func setup;
-	openr2_io_wait_func wait;
-	openr2_io_get_oob_event_func get_oob_event;
-} openr2_io_interface_t;
-
-typedef enum {
-	OR2_IO_DEFAULT = 0, /* Default is Zaptel */
-	/* OR2_IO_OPENZAP (libopenzap I/O) */
-	/* OR2_IO_SANGOMA (libsangoma I/O) */
-	OR2_IO_ZT, /* Zaptel or DAHDI I/O */
-	OR2_IO_CUSTOM = 9 /* any unsupported vendor I/O (pika, digivoice, kohmp etc) */
-} openr2_io_type_t;
-
 /* Transcoding interface. Users should provide this interface
    to provide transcoding services from linear to alaw and 
    viceversa */
@@ -212,19 +180,12 @@ typedef enum {
 	/* Invalid channel signaling when creating it */
 	OR2_LIBERR_INVALID_CHAN_SIGNALING,
 	/* cannot set to IDLE the channel when creating it */
-	OR2_LIBERR_CANNOT_SET_IDLE,
-	/* No I/O interface is available */
-	OR2_LIBERR_NO_IO_IFACE_AVAILABLE,
-	/* Invalid channel number provided  */
-	OR2_LIBERR_INVALID_CHAN_NUMBER,
-	/* Out of memory */
-	OR2_LIBERR_OUT_OF_MEMORY,
-	/* Invalid interface provided */
-	OR2_LIBERR_INVALID_INTERFACE
+	OR2_LIBERR_CANNOT_SET_IDLE
 } openr2_liberr_t;
 
 int openr2_context_get_time_to_next_event(openr2_context_t *r2context);
-openr2_context_t *openr2_context_new(openr2_variant_t variant, openr2_event_interface_t *callmgmt, int max_ani, int max_dnis);
+openr2_context_t *openr2_context_new(openr2_mflib_interface_t *mflib, openr2_event_interface_t *callmgmt, 
+		              openr2_transcoder_interface_t *transcoder, openr2_variant_t variant, int max_ani, int max_dnis);
 void openr2_context_delete(openr2_context_t *r2context);
 openr2_liberr_t openr2_context_get_last_error(openr2_context_t *r2context);
 const char *openr2_context_error_string(openr2_liberr_t error);
@@ -250,12 +211,9 @@ int openr2_context_get_metering_pulse_timeout(openr2_context_t *r2context);
 void openr2_context_set_double_answer(openr2_context_t *r2context, int enable);
 int openr2_context_get_double_answer(openr2_context_t *r2context);
 int openr2_context_configure_from_advanced_file(openr2_context_t *r2context, const char *filename);
-int openr2_context_set_io_type(openr2_context_t *r2context, openr2_io_type_t io_type, openr2_io_interface_t *io_interface);
 void openr2_context_set_dtmf_dialing(openr2_context_t *r2context, int enable, int dtmf_on, int dtmf_off);
 int openr2_context_get_dtmf_dialing(openr2_context_t *r2context, int *dtmf_on, int *dtmf_off);
 int openr2_context_set_dtmf_interface(openr2_context_t *r2context, openr2_dtmf_interface_t *dtmf_interface);
-int openr2_context_set_mflib_interface(openr2_context_t *r2context, openr2_mflib_interface_t *mflib);
-int openr2_context_set_transcoder_interface(openr2_context_t *r2context, openr2_transcoder_interface_t *transcoder);
 
 #ifdef __OR2_COMPILING_LIBRARY__
 #undef openr2_chan_t 
