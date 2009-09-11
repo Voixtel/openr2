@@ -27,15 +27,23 @@
 extern "C" {
 #endif
 
-#include "r2exports.h"
+#ifdef __OR2_COMPILING_LIBRARY__
+struct openr2_chan_s;
+#define openr2_chan_t struct openr2_chan_s
+struct openr2_context_s;
+#define openr2_context_t struct openr2_context_s
+#else
+#ifndef OR2_CHAN_AND_CONTEXT_DEFINED
+#define OR2_CHAN_AND_CONTEXT_DEFINED
+typedef void* openr2_chan_t;
+typedef void* openr2_context_t;
+#endif
+#endif
 
 #define OR2_MAX_ANI 80
 #define OR2_MAX_DNIS 80
 #define OR2_DEFAULT_DTMF_ON 50
 #define OR2_DEFAULT_DTMF_OFF 100
-
-#define OR2_STOP_DNIS_REQUEST 0
-#define OR2_CONTINUE_DNIS_REQUEST 1
 
 /* 
    This are known as Multi Frequency signals ( MF signals). the same 15 inter-register signals 
@@ -158,12 +166,13 @@ typedef enum {
 
 /* possible calling party categories */
 typedef enum {
-	OR2_CALLING_PARTY_CATEGORY_NATIONAL_SUBSCRIBER,
+	OR2_CALLING_PARTY_CATEGORY_NATIONAL_SUBSCRIBER = 0,
 	OR2_CALLING_PARTY_CATEGORY_NATIONAL_PRIORITY_SUBSCRIBER,
 	OR2_CALLING_PARTY_CATEGORY_INTERNATIONAL_SUBSCRIBER,
 	OR2_CALLING_PARTY_CATEGORY_INTERNATIONAL_PRIORITY_SUBSCRIBER,
 	OR2_CALLING_PARTY_CATEGORY_COLLECT_CALL,
-	OR2_CALLING_PARTY_CATEGORY_UNKNOWN
+	OR2_CALLING_PARTY_CATEGORY_UNKNOWN, 
+	OR2_CALLING_PARTY_CATEGORY_TEST_EQUIPMENT
 } openr2_calling_party_category_t;
 
 const char *openr2_proto_get_error(openr2_protocol_error_t reason);

@@ -293,6 +293,9 @@ typedef enum {
 	/* callee is asking us to end the call immediately */
 	OR2_FORCED_RELEASE_RXD = 308,
 
+	/* we sent clear forward and then got clear back */
+	OR2_CLEAR_BACK_AFTER_CLEAR_FWD_RXD = 309,
+
 	/* Blocked line */
 	OR2_BLOCKED = 400,
 
@@ -361,6 +364,7 @@ typedef struct {
 	openr2_mf_tone_t request_next_ani_digit;
 	openr2_mf_tone_t request_change_to_g2;
 	openr2_mf_tone_t request_next_dnis_digit_and_change_to_ga;
+	openr2_mf_tone_t network_congestion;
 } openr2_mf_gc_tones_t;
 
 /* names for the GI MF tones */
@@ -376,6 +380,7 @@ typedef struct {
 	openr2_mf_tone_t international_subscriber;
 	openr2_mf_tone_t international_priority_subscriber;
 	openr2_mf_tone_t collect_call;
+	openr2_mf_tone_t test_equipment;
 } openr2_mf_g2_tones_t;
 
 const char *openr2_proto_get_rx_cas_string(struct openr2_chan_s *r2chan);
