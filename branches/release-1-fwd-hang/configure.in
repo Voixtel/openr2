@@ -1,0 +1,130 @@
+# OpenR2 
+# MFC/R2 call setup library 
+# www.libopenr2.org
+#
+# Moises Silva <moy@sangoma.com>
+# Copyright (C) 2008 Moises Silva
+# 
+
+# Package and LT versions are not the same (they can match sometimes though)
+# see http://sources.redhat.com/autobook/autobook/autobook_91.html for details
+# more info on versioning: http://www.nondot.org/sabre/Mirrored/libtool-2.1a/libtool_6.html#SEC33
+
+AC_INIT([OpenR2], [1.2.0])
+
+# final lib name will be: libopenr2-<current - age>,<age>,<revision>.so
+OPENR2_LT_CURRENT=2
+OPENR2_LT_REVISION=0
+OPENR2_LT_AGE=1
+
+AC_SUBST(OPENR2_LT_CURRENT)
+AC_SUBST(OPENR2_LT_REVISION)
+AC_SUBST(OPENR2_LT_AGE)
+
+# AC_CONFIG_SRCDIR ???
+AC_CONFIG_HEADERS(config.h)
+AM_INIT_AUTOMAKE
+
+# let's default to compile with debugging information
+# most users will not even care about it
+CFLAGS='-ggdb3 -O0'
+CXXFLAGS='-ggdb3 -O0'
+
+AC_PROG_CC
+AC_PROG_LIBTOOL
+AC_LANG([C])
+
+AC_CHECK_LIB([m],[cosf], [], [AC_MSG_FAILURE([library libm is required but not present])])
+AC_CHECK_HEADER([math.h],[],[AC_MSG_FAILURE([header math.h is required but not present])])
+AC_CHECK_HEADER([pthread.h],[],[AC_MSG_FAILURE([header pthread.h is required but not present])])
+
+AC_DEFUN([AX_GCC_OPTION], [
+  AC_REQUIRE([AC_PROG_CC])
+
+  AC_MSG_CHECKING([if gcc accepts $1 option])
+
+  AS_IF([ test "x$GCC" = "xyes" ],[
+    AS_IF([ test -z "$3" ],[
+      ax_gcc_option_test="int main()
+{
+        return 0;
+}"
+    ],[
+      ax_gcc_option_test="$3"
+    ])
+
+    # Dump the test program to file
+    cat <<EOF > conftest.c
+$ax_gcc_option_test
+EOF
+
+    # Dump back the file to the log, useful for debugging purposes
+    AC_TRY_COMMAND(cat conftest.c 1>&AS_MESSAGE_LOG_FD)
+
+    AS_IF([ AC_TRY_COMMAND($CC $2 $1 -c conftest.c 1>&AS_MESSAGE_LOG_FD) ],[
+            AC_MSG_RESULT([yes])
+        $4
+    ],[
+            AC_MSG_RESULT([no])
+        $5
+    ])
+  ],[
+    AC_MSG_RESULT([no gcc available])
+  ])
+])
+
+AX_GCC_OPTION([-fvisibility=hidden],[],[],[have_visibility=yes],[have_visibility=no])
+AM_CONDITIONAL([HAVE_ATTR_VISIBILITY_HIDDEN], [test "x$have_visibility" = xyes])
+if [test "x$have_visibility" = xyes]
+then
+	AC_MSG_RESULT([GCC supports -fvisibility and will be used to compile the library])
+else
+	AC_MSG_RESULT([GCC does NOT support -fvisibility and will not used to compile the library])
+fi
+
+nozaptel=no
+nozaptelzaptel=no
+nodahdiuser=no
+AC_CHECK_HEADERS([linux/zaptel.h],[],[nozaptel=yes])
+AC_CHECK_HEADERS([zaptel/zaptel.h],[],[nozaptelzaptel=yes])
+AC_CHECK_HEADERS([dahdi/user.h],[],[nodahdiuser=yes])
+
+if [test "x$nozaptel" = xyes] && [test "x$nozaptelzaptel" = xyes] && [test "x$nodahdiuser" = xyes]
+then
+	AC_MSG_FAILURE([Zaptel or DAHDI headers are required but not present])
+fi
+
+AC_ARG_WITH([r2test], [AS_HELP_STRING([--without-r2test], 
+	                [disable the r2test program.])],
+	                [with_r2test=no],
+			[with_r2test=yes])
+AM_CONDITIONAL([WANT_R2TEST], [test "x$with_r2test" = xyes])
+if [test "x$with_r2test" = xyes]
+then
+	AC_MSG_RESULT([r2test program will be compiled])
+else
+	AC_MSG_RESULT([r2test program will NOT be compiled])
+fi
+
+AC_ARG_WITH([trace-stacks], [AS_HELP_STRING([--with-trace-stacks], 
+	                [enable r2's stacks debugging.])],
+	                [],
+			[with_tracestacks=no])
+AM_CONDITIONAL([WANT_OR2_TRACE_STACKS], [test "x$with_tracestacks" != xno])
+
+AC_PATH_PROGS(svnversioncommand,svnversion)
+
+if [test "x$svnversioncommand" = "x"]
+then
+	openr2_revision="(release)"
+else
+	openr2_revision="svnversion -n"
+fi
+
+AM_CONDITIONAL([HAVE_SVNVERSION], [test "x$svnversioncommand" != "x"])
+
+
+AC_CONFIG_FILES([Makefile
+		src/Makefile])
+
+AC_OUTPUT
