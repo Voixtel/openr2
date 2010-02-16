@@ -24,7 +24,6 @@
 #define _OPENR2_CHAN_PVT_H_
 
 #include <stdio.h>
-#include <pthread.h>
 #include <sys/time.h>
 #include "r2engine.h"
 #include "r2log.h"
@@ -90,24 +89,21 @@ typedef enum r2chan_flags_e {
 	OR2_CHAN_CALL_DNIS_CALLBACK = (1 << 0)
 } r2chan_flags_t;
 
-/* R2 channel. Hold the states of the R2 signaling, I/O device etc.
+/* R2 channel. Hold the states of the R2 signaling, zap device etc.
    The R2 variant will be inherited from the R2 context 
    this channel belongs to */
 typedef struct openr2_chan_s {
 
-	/* hold this for operations on the channel */
-	pthread_mutex_t lock;	
-
 	/* whether or not we created the FD */
 	int fd_created;
 
-	/* I/O device fd */
-	openr2_io_fd_t fd;
+	/* zap device fd */
+	int fd;
 
-	/* I/O buffer size */
-	int io_buf_size;
+	/* zap buffer size */
+	int zap_buf_size;
 
-	/* I/O device number */
+	/* zap device number */
 	int number;
 
 	/* to read or not to read, that is the question */
@@ -254,9 +250,6 @@ typedef struct openr2_chan_s {
 	struct openr2_chan_s *next;
 } openr2_chan_t;
 
-#define openr2_chan_lock(r2chan) pthread_mutex_lock(&(r2chan)->lock)
-#define openr2_chan_unlock(r2chan) pthread_mutex_unlock(&(r2chan)->lock)
-#define OR2_INVALID_IO_HANDLE NULL
 int openr2_chan_add_timer(openr2_chan_t *r2chan, int ms, openr2_callback_t callback, const char *name);
 void openr2_chan_cancel_timer(openr2_chan_t *r2chan, int *timer_id);
 void openr2_chan_cancel_all_timers(openr2_chan_t *r2chan);

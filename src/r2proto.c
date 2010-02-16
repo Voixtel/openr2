@@ -36,7 +36,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <ctype.h>
-#include "openr2/r2ioabs.h"
+#include <sys/ioctl.h>
+#include "openr2/r2hwcompat.h"
 #include "openr2/r2log-pvt.h"
 #include "openr2/r2utils-pvt.h"
 #include "openr2/r2proto-pvt.h"
@@ -187,14 +188,14 @@ static void r2config_colombia(openr2_context_t *r2context)
    line (0x8 + 0x1) or (0x8 + whatever CD bits are set to) */
 static const int standard_cas_signals[OR2_NUM_CAS_SIGNALS] =
 {
-	/* OR2_CAS_IDLE */ 0x8,           /* 1001 */
-	/* OR2_CAS_BLOCK */ 0xC,          /* 1101 */
-	/* OR2_CAS_SEIZE */ 0x0,          /* 0001 */
-	/* OR2_CAS_SEIZE_ACK */ 0xC,      /* 1101 */
-	/* OR2_CAS_CLEAR_BACK */ 0xC,     /* 1101 */
-	/* OR2_CAS_FORCED_RELEASE */ 0x0, /* 0001 */
-	/* OR2_CAS_CLEAR_FORWARD */ 0x8,  /* 1001 */
-	/* OR2_CAS_ANSWER */ 0x4,         /* 0101 */
+	/* OR2_CAS_IDLE */ 0x8,
+	/* OR2_CAS_BLOCK */ 0xC,
+	/* OR2_CAS_SEIZE */ 0x0,
+	/* OR2_CAS_SEIZE_ACK */ 0xC,
+	/* OR2_CAS_CLEAR_BACK */ 0xC,
+	/* OR2_CAS_FORCED_RELEASE */ 0x0,
+	/* OR2_CAS_CLEAR_FORWARD */ 0x8,
+	/* OR2_CAS_ANSWER */ 0x4,
 };
 
 static const char *cas_names[OR2_NUM_CAS_SIGNALS] =
@@ -300,7 +301,7 @@ static void turn_off_mf_engine(openr2_chan_t *r2chan)
 static int set_cas_signal(openr2_chan_t *r2chan, openr2_cas_signal_t signal)
 {
 	OR2_CHAN_STACK;
-	int res, cas;
+	int res, cas, myerrno;
 	if (signal == OR2_CAS_INVALID) {
 		openr2_log(r2chan, OR2_LOG_ERROR, "Cannot set INVALID signal\n");
 		return -1;
@@ -311,9 +312,11 @@ static int set_cas_signal(openr2_chan_t *r2chan, openr2_cas_signal_t signal)
 	r2chan->cas_tx_signal = signal;
 	/* set the NON R2 bits to 1 */
 	cas |= r2chan->r2context->cas_nonr2_bits; 
-	res = openr2_io_set_cas(r2chan, cas);
+	res = ioctl(r2chan->fd, OR2_HW_OP_SET_TX_BITS, &cas);
 	if (res) {
-		openr2_log(r2chan, OR2_LOG_ERROR, "CAS I/O failure.\n");
+		myerrno = errno;
+		EMI(r2chan)->on_os_error(r2chan, myerrno);
+		openr2_log(r2chan, OR2_LOG_ERROR, "Setting CAS bits failed: %s\n", strerror(myerrno));
 		return -1;
 	} 
 	openr2_log(r2chan, OR2_LOG_CAS_TRACE, "CAS Raw Tx >> 0x%02X\n", cas);
@@ -636,7 +639,6 @@ static void openr2_proto_init(openr2_chan_t *r2chan)
 	openr2_chan_cancel_all_timers(r2chan);
 
 	/* initialize all the proto and call stuff */
-	r2chan->read_enabled = 1;
 	r2chan->ani[0] = '\0';
 	r2chan->ani_len = 0;
 	r2chan->ani_ptr = NULL;
@@ -891,11 +893,15 @@ static void mf_back_cycle_timeout_expired(openr2_chan_t *r2chan);
 static void prepare_mf_tone(openr2_chan_t *r2chan, int tone)
 {
 	OR2_CHAN_STACK;
-	int ret;
+	int flush_write = OR2_HW_FLUSH_WRITE, ret;
+	int myerrno = 0;
 	/* put silence only if we have a write tone */
 	if (!tone && r2chan->mf_write_tone) {
 		openr2_log(r2chan, OR2_LOG_MF_TRACE, "MF Tx >> %c [OFF]\n", r2chan->mf_write_tone);
-		if (openr2_io_flush_write_buffers(r2chan)) {
+		if (ioctl(r2chan->fd, OR2_HW_OP_FLUSH, &flush_write)) {
+			myerrno = errno;
+			EMI(r2chan)->on_os_error(r2chan, myerrno);
+			openr2_log(r2chan, OR2_LOG_ERROR, "Flush write buffer failed: %s\n", strerror(myerrno));
 			return;
 		}
 	} 
@@ -980,8 +986,8 @@ static void report_call_end(openr2_chan_t *r2chan)
 	OR2_CHAN_STACK;
 	openr2_log(r2chan, OR2_LOG_DEBUG, "Call ended\n");
 	openr2_proto_set_idle(r2chan);
-	EMI(r2chan)->on_call_end(r2chan);
 	fix_rx_signal(r2chan);
+	EMI(r2chan)->on_call_end(r2chan);
 }
 
 static void r2_metering_pulse(openr2_chan_t *r2chan)
@@ -1022,10 +1028,11 @@ static void persistence_check_expired(openr2_chan_t *r2chan)
 	int cas, res, myerrno;
 	int rawcas;
 	r2chan->timer_ids.cas_persistence_check = 0;
-	res = openr2_io_get_cas(r2chan, &rawcas);
+	res = ioctl(r2chan->fd, OR2_HW_OP_GET_RX_BITS, &rawcas);
 	if (res) {
 		myerrno = errno;
-		openr2_log(r2chan, OR2_LOG_ERROR, "Getting CAS bits from I/O device for persistence check failed: %s\n", strerror(myerrno));
+		EMI(r2chan)->on_os_error(r2chan, myerrno);
+		openr2_log(r2chan, OR2_LOG_ERROR, "Getting CAS bits for persistence check failed: %s\n", strerror(myerrno));
 		return;
 	}
 	/* pick up only the R2 bits */
@@ -1058,7 +1065,7 @@ static void r2_answer_timeout_expired(openr2_chan_t *r2chan);
 int openr2_proto_handle_cas(openr2_chan_t *r2chan)
 {
 	OR2_CHAN_STACK;
-	int cas, res;
+	int cas, res, myerrno;
 	openr2_cas_state_t out_r2_state = OR2_INVALID_STATE;
 	openr2_call_disconnect_cause_t out_disconnect_cause = OR2_CAUSE_NORMAL_CLEARING;
 
@@ -1071,9 +1078,11 @@ int openr2_proto_handle_cas(openr2_chan_t *r2chan)
 		goto handlecas;
 	} 
 
-	res = openr2_io_get_cas(r2chan, &cas);
+	res = ioctl(r2chan->fd, OR2_HW_OP_GET_RX_BITS, &cas);
 	if (res) {
-		openr2_log(r2chan, OR2_LOG_ERROR, "Getting CAS from I/O device failed\n");
+		myerrno = errno;
+		EMI(r2chan)->on_os_error(r2chan, myerrno);
+		openr2_log(r2chan, OR2_LOG_ERROR, "Getting CAS bits failed: %s\n", strerror(myerrno));
 		return -1;
 	}
 	if (r2chan->cas_persistence_check_signal != -1) {
@@ -1114,6 +1123,7 @@ handlecas:
 	/* ok, bits have changed, we need to know in which 
 	   CAS state we are to know what to do */
 	switch (r2chan->r2_state) {
+
 	case OR2_IDLE:
 		if (cas == R2(r2chan, BLOCK)) {
 			CAS_LOG_RX(BLOCK);
@@ -1135,6 +1145,7 @@ handlecas:
 			handle_protocol_error(r2chan, OR2_INVALID_CAS_BITS);
 		}
 		break;
+
 	case OR2_SEIZE_ACK_TXD:
 	case OR2_ANSWER_TXD:
 		/* if call setup already started or the call is answered 
@@ -1149,6 +1160,7 @@ handlecas:
 			handle_protocol_error(r2chan, OR2_INVALID_CAS_BITS);
 		}
 		break;
+
 	case OR2_SEIZE_TXD:
 		/* if we transmitted a seize we expect the seize ACK */
 		if (cas == R2(r2chan, SEIZE_ACK)) {
@@ -1186,6 +1198,7 @@ handlecas:
 			handle_protocol_error(r2chan, OR2_INVALID_CAS_BITS);
 		}
 		break;
+
 	case OR2_CLEAR_BACK_TXD:
 	case OR2_FORCED_RELEASE_TXD:
 		if (cas == R2(r2chan, CLEAR_FORWARD)) {
@@ -1196,6 +1209,7 @@ handlecas:
 			handle_protocol_error(r2chan, OR2_INVALID_CAS_BITS);
 		}
 		break;
+
 	case OR2_ACCEPT_RXD:
 		/* once we got MF ACCEPT tone, we expect the CAS Answer 
 		   or some disconnection signal, anything else, protocol error */
@@ -1215,6 +1229,7 @@ handlecas:
 			handle_protocol_error(r2chan, OR2_INVALID_CAS_BITS);
 		}
 		break;
+
 	case OR2_SEIZE_ACK_RXD:
 		/* In MFC-R2 This state means we're during call setup (ANI/DNIS transmission) and the ACCEPT signal
 		   has not been received, which requires some special handling, read below for more info ...
@@ -1249,6 +1264,7 @@ handlecas:
 			handle_protocol_error(r2chan, OR2_INVALID_CAS_BITS);
 		}
 		break;
+
 	case OR2_ANSWER_RXD_MF_PENDING:
 	case OR2_ANSWER_RXD:
 		if (cas == R2(r2chan, CLEAR_BACK)) {
@@ -1278,6 +1294,7 @@ handlecas:
 			handle_protocol_error(r2chan, OR2_INVALID_CAS_BITS);
 		}
 		break;
+
 	case OR2_CLEAR_BACK_TONE_RXD:
 		if (cas == R2(r2chan, IDLE)) {
 			CAS_LOG_RX(IDLE);
@@ -1287,6 +1304,7 @@ handlecas:
 			handle_protocol_error(r2chan, OR2_INVALID_CAS_BITS);
 		}
 		break;
+
 	case OR2_CLEAR_FWD_TXD:
 		if (cas == R2(r2chan, IDLE)) {
 			CAS_LOG_RX(IDLE);
@@ -1311,6 +1329,7 @@ handlecas:
 			handle_protocol_error(r2chan, OR2_INVALID_CAS_BITS);
 		}
 		break;
+
 	case OR2_CLEAR_BACK_RXD:
 		/* we got clear back but we have not transmitted clear fwd yet, then, the only
 		   reason for CAS change is a possible metering pulse, if we are not detecting a metering
@@ -1320,7 +1339,6 @@ handlecas:
 			CAS_LOG_RX(ANSWER);
 			openr2_chan_cancel_timer(r2chan, &r2chan->timer_ids.r2_metering_pulse);
 			r2chan->r2_state = OR2_ANSWER_RXD;
-			/* TODO: we could notify the user here with a callback, but I have not seen a use for this yet */
 			openr2_log(r2chan, OR2_LOG_NOTICE, "Metering pulse received");
 			EMI(r2chan)->on_billing_pulse_received(r2chan);
 		} else {
@@ -1328,6 +1346,7 @@ handlecas:
 			handle_protocol_error(r2chan, OR2_INVALID_CAS_BITS);
 		}
 		break;
+
 	case OR2_BLOCKED:
 		/* we're blocked, unless they are setting IDLE, we don't care */
 		if (cas == R2(r2chan, IDLE)) {
@@ -1570,15 +1589,6 @@ static void mf_back_cycle_timeout_expired(openr2_chan_t *r2chan)
 	if (OR2_MF_TONE_INVALID == GI_TONE(r2chan).no_more_dnis_available
 	     && r2chan->mf_group == OR2_MF_GA
 	     && r2chan->mf_state == OR2_MF_DNIS_RQ_TXD) {
-	
-		/*
-		TODO:	
-		how dow we know that the other end is in tone off condition?,
-		we dont know that, we could have timeout even before they put off their tone
-		if they never detect our tone */
-
-
-
 		openr2_log(r2chan, OR2_LOG_DEBUG, "MF cycle timed out, no more DNIS\n");
 		/* the other end has run out of DNIS digits and were in a R2 variant that
 		   does not support 'No More DNIS available' signal (ain't that silly?), and
@@ -1946,6 +1956,21 @@ static void mf_send_ani(openr2_chan_t *r2chan)
 {
 	/* TODO: Handle sending of previous ANI digits */
 	OR2_CHAN_STACK;
+
+	/* before trying to send, check if we already said we dont have more ANI */
+	if (r2chan->mf_state == OR2_MF_ANI_END_TXD) {
+		/* this means probably that they are asking for something else, most likely DNIS
+		   if the ANI tone is the same as DNIS, then change to GA again to continue
+		   with DNIS */
+		if (GA_TONE(r2chan).request_next_dnis_digit == GA_TONE(r2chan).request_next_ani_digit ||
+		    GA_TONE(r2chan).request_next_dnis_digit == GC_TONE(r2chan).request_next_ani_digit) {
+			openr2_log(r2chan, OR2_LOG_DEBUG, "Assuming DNIS request (next ani tone == next dnis tone), switching to Group I\n");
+			r2chan->mf_group = OR2_MF_GI;
+			mf_send_dnis(r2chan, 1);
+			return;
+		}
+	}
+
 	/* if the pointer to ANI is null, that means the caller ANI is restricted */
 	if (NULL == r2chan->ani_ptr) {
 		openr2_log(r2chan, OR2_LOG_DEBUG, "Sending Restricted ANI\n");
@@ -2161,10 +2186,13 @@ static void handle_backward_mf_silence(openr2_chan_t *r2chan, int tone)
 
 static int timediff(struct timeval *t1, struct timeval *t2)
 {
+	int secdiff = 0;
 	int msdiff = 0;
 	if (t1->tv_sec == t2->tv_sec) {
 		return ((t1->tv_usec - t2->tv_usec)/1000);
 	}
+	secdiff = t1->tv_sec - t2->tv_sec;	
+	secdiff--;
 	msdiff  = (t1->tv_usec) ? (t1->tv_usec/1000)          : 0;
 	msdiff += (t2->tv_usec) ? (1000 - (t2->tv_usec/1000)) : 0;
 	return msdiff;
@@ -2357,7 +2385,7 @@ int openr2_proto_make_call(openr2_chan_t *r2chan, const char *ani, const char *d
 	r2chan->direction = OR2_DIR_FORWARD;
 	r2chan->caller_category = category2tone(r2chan, category);
 	if (!DIAL_DTMF(r2chan)) {
-		r2chan->mf_group = OR2_MF_DTMF_FWD_INIT;
+		r2chan->mf_group = OR2_MF_FWD_INIT;
 	} else {
 		if (!DTMF(r2chan)->dtmf_tx_init(r2chan->dtmf_write_handle)) {
 			openr2_log(r2chan, OR2_LOG_ERROR, "Failed to initialize DTMF transmitter, cannot make call!!\n");
@@ -2457,11 +2485,17 @@ int openr2_proto_disconnect_call(openr2_chan_t *r2chan, openr2_call_disconnect_c
 
 	if (r2chan->direction == OR2_DIR_BACKWARD) {
 		if (DETECT_DTMF(r2chan)) {
-			/* this is a normal clear backward */
-			if (send_clear_backward(r2chan)) {
-				openr2_log(r2chan, OR2_LOG_ERROR, "Failed to send Clear Backward!, "
-						"cannot disconnect call nicely!, may be try again?\n");
-				return -1;
+			if (r2chan->r2_state == OR2_CLEAR_FWD_RXD) {
+				/* this is the same than non-DTMF calls, but we handle it
+				 * here to avoid touching non-DTMF code and keep it separate */
+				report_call_end(r2chan);
+			} else {
+				/* this is a normal clear backward (for which we will wait a clear forward) */
+				if (send_clear_backward(r2chan)) {
+					openr2_log(r2chan, OR2_LOG_ERROR, "Failed to send Clear Backward!, "
+							"cannot disconnect call nicely!, may be try again?\n");
+					return -1;
+				}
 			}
 		} else if (r2chan->call_state == OR2_CALL_OFFERED ) {
 			/* if the call has been offered we need to give a reason 
@@ -2545,21 +2579,21 @@ openr2_calling_party_category_t openr2_proto_get_category(const char *category)
 		return OR2_CALLING_PARTY_CATEGORY_TEST_EQUIPMENT;
 	}
 
-	/* this was added to allow values returned by openr2_proto_get_category_string to be passed back to openr2_proto_get_category and recover
-	the category value, which makes a lot of sense :-) */
-	if (!openr2_strncasecmp(category, "National Subscriber", sizeof("National Subscriber")-1)) {
-		return OR2_CALLING_PARTY_CATEGORY_NATIONAL_SUBSCRIBER;
-	} else if (!openr2_strncasecmp(category, "National Priority Subscriber", sizeof("National Priority Subscriber")-1)) {
-		return OR2_CALLING_PARTY_CATEGORY_NATIONAL_PRIORITY_SUBSCRIBER;
-	} else if (!openr2_strncasecmp(category, "International Subscriber", sizeof("International Subscriber")-1)) {
-		return OR2_CALLING_PARTY_CATEGORY_INTERNATIONAL_SUBSCRIBER;
-	} else if (!openr2_strncasecmp(category, "International Priority Subscriber", sizeof("International Priority Subscriber")-1)) {
-		return OR2_CALLING_PARTY_CATEGORY_INTERNATIONAL_PRIORITY_SUBSCRIBER;
-	} else if (!openr2_strncasecmp(category, "Collect Call", sizeof("Collect Call")-1)) {
-		return OR2_CALLING_PARTY_CATEGORY_COLLECT_CALL;
-	} else if (!openr2_strncasecmp(category, "Test Equipment", sizeof("Test Equipment")-1)) {
-		return OR2_CALLING_PARTY_CATEGORY_TEST_EQUIPMENT;
-	}	
+    /* this was added to allow values returned by openr2_proto_get_category_string to be passed back to openr2_proto_get_category and recover
+    the category value, which makes a lot of sense :-) */
+    if (!openr2_strncasecmp(category, "National Subscriber", sizeof("National Subscriber")-1)) {
+        return OR2_CALLING_PARTY_CATEGORY_NATIONAL_SUBSCRIBER;
+    } else if (!openr2_strncasecmp(category, "National Priority Subscriber", sizeof("National Priority Subscriber")-1)) {
+        return OR2_CALLING_PARTY_CATEGORY_NATIONAL_PRIORITY_SUBSCRIBER;
+    } else if (!openr2_strncasecmp(category, "International Subscriber", sizeof("International Subscriber")-1)) {
+        return OR2_CALLING_PARTY_CATEGORY_INTERNATIONAL_SUBSCRIBER;
+    } else if (!openr2_strncasecmp(category, "International Priority Subscriber", sizeof("International Priority Subscriber")-1)) {
+        return OR2_CALLING_PARTY_CATEGORY_INTERNATIONAL_PRIORITY_SUBSCRIBER;
+    } else if (!openr2_strncasecmp(category, "Collect Call", sizeof("Collect Call")-1)) {
+        return OR2_CALLING_PARTY_CATEGORY_COLLECT_CALL;
+    } else if (!openr2_strncasecmp(category, "Test Equipment", sizeof("Test Equipment")-1)) {
+        return OR2_CALLING_PARTY_CATEGORY_TEST_EQUIPMENT;
+    }	
 
 	return OR2_CALLING_PARTY_CATEGORY_UNKNOWN;
 }
