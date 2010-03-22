@@ -26,7 +26,6 @@ depend directly on spandsp, libteletone or zaptel for tone generation and detect
 Summary:        Development files for %{name}
 Group:          Development/Libraries
 Requires:       %{name} = %{version}-%{release}
-Provides:       libopenr2-1.1.0.so
 
 %description    devel
 The %{name}-devel package contains libraries and header files for
@@ -83,8 +82,13 @@ rm -rf $RPM_BUILD_ROOT
 
 %changelog
 * Mon Mar 16 2009 Alexandre Alencar <alexandre.alencar@gmail.com>
-- Updated to the latest OpenR2 upstream package
+- Updated package version number
+- Updated to OpenR2 source package 1.2.0
 - Fixed some typos
+
+* Mon Feb 02 2009 Alexandre Alencar <alexandre.alencar@gmail.com>
+- Updated package version number
+- Add compilance with ANATEL (Brazilian telecomunications agency)
 
 * Mon Jan 12 2009 Alexandre Alencar <alexandre.alencar@gmail.com>
 - Update package version
