@@ -24,6 +24,10 @@
  *
  */
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <string.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -54,11 +58,14 @@ static void on_call_init_default(openr2_chan_t *r2chan)
 	openr2_log(r2chan, OR2_CHANNEL_LOG, OR2_LOG_NOTICE, "call starting at chan %d\n", openr2_chan_get_number(r2chan));
 }
 
-static void on_call_offered_default(openr2_chan_t *r2chan, const char *ani, const char *dnis, openr2_calling_party_category_t category)
+static void on_call_offered_default(openr2_chan_t *r2chan, const char *ani, 
+		const char *dnis, openr2_calling_party_category_t category, int ani_restricted)
 {
 	OR2_CHAN_STACK;
-	openr2_log(r2chan, OR2_CHANNEL_LOG, OR2_LOG_NOTICE, "call ready at chan %d with ANI = %s, DNIS = %s, Category = %s\n", 
-			openr2_chan_get_number(r2chan), ani, dnis, openr2_proto_get_category_string(category));
+	openr2_log(r2chan, OR2_CHANNEL_LOG, OR2_LOG_NOTICE, 
+			"call ready at chan %d with ANI = %s, DNIS = %s, Category = %s, ANI Restricted = %s\n", 
+			openr2_chan_get_number(r2chan), ani, dnis, openr2_proto_get_category_string(category),
+			ani_restricted ? "Yes" : "No");
 }
 
 static void on_call_accepted_default(openr2_chan_t *r2chan, openr2_call_mode_t mode)
@@ -903,6 +910,7 @@ OR2_DECLARE(int) openr2_context_configure_from_advanced_file(openr2_context_t *r
 		LOADTONE(mf_g2_tones.international_subscriber)
 		LOADTONE(mf_g2_tones.international_priority_subscriber)
 		LOADTONE(mf_g2_tones.collect_call)
+		LOADTONE(mf_g2_tones.pay_phone)
 
 		/* Timers */
 		LOADTIMER(timers.mf_back_cycle)
@@ -913,6 +921,7 @@ OR2_DECLARE(int) openr2_context_configure_from_advanced_file(openr2_context_t *r
 		LOADTIMER(timers.r2_metering_pulse)
 		LOADTIMER(timers.r2_double_answer)
 		LOADTIMER(timers.r2_answer_delay)
+		LOADTIMER(timers.r2_set_call_down)
 		LOADTIMER(timers.cas_persistence_check)
 		LOADTIMER(timers.dtmf_start_dial)
 
