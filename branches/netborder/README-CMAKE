@@ -2,7 +2,18 @@ CMake is a build system generator, we're currently using it to build openr2 on b
 linux and windows systems. For instructions on how to build on windows, please see
 README.windows.
 
-To build it using cmake on linux, follow these steps:
+Openr2 already comes with cmake-generated build files for some platforms/build systems, they're
+saved on the 'build' directory. Chances are the build files for your platform are already
+bootstrapped there, if so you can just chdir to the proper dir and type build it.
+
+For linux on 64bits, for instance:
+	cd build/linux-x86_64
+	make && sudo make install
+
+This wil build the library and it's test binaries, r2dtmf_detect and r2test, and install it
+to /usr prefix. Hence, the .so would be on /usr/lib64 and headers on /usr/include
+
+If you have/want to bootstrap cmake on Linux yourself, follow these steps:
 
 	1. From outside the source tree, create a "build dir": mkdir openr2-build
 	2. Enter openr2-build: cd openr2-build
@@ -11,6 +22,10 @@ To build it using cmake on linux, follow these steps:
 	4. Build it: make
 	5. Install: sudo make install
 	6. Run ldconfig: sudo ldconfig
+
+You can specify variables definition on step 3, through -DVAR=VALUE. To also generate r2dtmf_detect and
+r2test binaries, for example, you would use:
+	cmake -DDWANT_R2TEST=1 -DCMAKE_INSTALL_PREFIX=/usr ../openr2.trunk
 
 After this, you should see libopenr2 listed on the output of 'ldconfig -p' command. If you have any
 build problems and want to debug the gcc command line used, instead of just 'make', run 'make VERBOSE=1'
