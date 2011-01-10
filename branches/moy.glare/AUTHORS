@@ -1,0 +1,38 @@
+Moises Silva 
+<moy@sangoma.com>
+http://www.moythreads.com/
+- Author and primary developer.
+
+Alexandre Cavalcante Alencar
+<alexandre.alencar@gmail.com>
+- Debian build, documentation, r2test enhancements, testing in Brazil and longstanding support and help.
+
+Cleiber Marques da Silva
+<cleibermarques@hotmail.com>
+- Implementation of collect calls, release forced and other work for the Brazilian variant.
+
+Humberto Figuera
+<hfiguera@gmail.com>
+- Venezuela variant and immediate accept for the backward side.
+
+Steve Underwood 
+<steveu@coppice.org>
+- I Borrowed code from his SpanDSP LGPL library for the MF Detector and generator (basically r2engine.c and r2engine.h).
+
+Tzafrir Cohen
+<tzafrir.cohen@xorcom.com>
+- Debian package.
+
+Afonso Zimmermann
+<afonso.zimmermann@gmail.com>
+- Test equipment category fix.
+
+Arnaldo Moraes Pereira
+<arnaldo@sangoma.com>
+- Port to Windows and many improvements and fixes
+
+Ricardo Barroetaveña 
+<rbarroetavena@anura.com.ar>
+- Pay phone category
+- Improvements for R2 spec compliance during clear forward
+
